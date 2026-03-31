@@ -454,7 +454,7 @@ function imgEl(f) {
 }
 
 // ════════════════════════════════════════════════════════════
-//  MODAL (Add/Edit Fruit)
+//  MODAL & IMAGE COMPRESSION (NEW FIX)
 // ════════════════════════════════════════════════════════════
 function openAddModal() {
   editingFruitId = null;
@@ -501,35 +501,77 @@ function previewUrl() {
   else prev.style.display = 'none';
 }
 
-function previewFile() {
-  const file = document.getElementById('modal-img-file').files[0];
-  if (!file) return;
-  uploadedFile = file;
-  compressImage(file, 300, 300).then(base64 => {
-    const prev = document.getElementById('modal-preview');
-    prev.src = base64; prev.style.display = 'block';
-    document.getElementById('modal-img-url').value = '';
-  });
-}
-
-function compressImage(file, maxW, maxH) {
-  return new Promise(resolve => {
+// Dynamic Compression Function
+function compressImage(file, maxW = 400, maxH = 400, targetSizeKB = 800) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    
     reader.onload = e => {
       const img = new Image();
+      img.onerror = () => reject(new Error("Failed to load image"));
+      
       img.onload = () => {
         const canvas = document.createElement('canvas');
         let w = img.width, h = img.height;
-        if (w > maxW) { h = h * maxW / w; w = maxW; }
-        if (h > maxH) { w = w * maxH / h; h = maxH; }
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
+        
+        // Scale down while maintaining aspect ratio
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+        
+        canvas.width = w; 
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw image to canvas
+        ctx.drawImage(img, 0, 0, w, h);
+        
+        let quality = 0.9;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        
+        // Helper to calculate approximate size of Base64 string in bytes
+        const getBase64Size = (b64) => Math.round((b64.length * 3) / 4) - (b64.indexOf(',') + 1);
+        const maxBytes = targetSizeKB * 1024;
+        
+        // Loop: Reduce quality until the file size is safely below the limit
+        while (getBase64Size(dataUrl) > maxBytes && quality > 0.1) {
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        
+        // Final safety check (Firestore limit is 1MB, or 1048576 bytes)
+        if (getBase64Size(dataUrl) > 1048576) { 
+            reject(new Error("Image still too large after maximum compression."));
+        } else {
+            resolve(dataUrl);
+        }
       };
       img.src = e.target.result;
     };
     reader.readAsDataURL(file);
   });
+}
+
+async function previewFile() {
+  const file = document.getElementById('modal-img-file').files[0];
+  if (!file) return;
+  
+  if (!file.type.startsWith('image/')) {
+     toast('Please select a valid image file', 'err');
+     return;
+  }
+
+  uploadedFile = file;
+  
+  try {
+    const base64 = await compressImage(file, 400, 400, 800);
+    const prev = document.getElementById('modal-preview');
+    prev.src = base64; 
+    prev.style.display = 'block';
+    document.getElementById('modal-img-url').value = '';
+  } catch (e) {
+    toast('Error loading preview: ' + e.message, 'err');
+  }
 }
 
 async function saveFruit() {
@@ -538,17 +580,19 @@ async function saveFruit() {
   if (!name) { toast('Please enter a fruit name', 'err'); return; }
 
   const btn = document.getElementById('modal-save-btn');
-  btn.innerHTML = '<span class="spinner"></span>';
+  btn.innerHTML = '<span class="spinner"></span> Processing...';
   btn.disabled = true;
 
   let imageUrl = document.getElementById('modal-img-url').value.trim();
 
   if (uploadedFile) {
     try {
-      imageUrl = await compressImage(uploadedFile, 300, 300);
+      imageUrl = await compressImage(uploadedFile, 400, 400, 800);
     } catch (e) {
-      toast('Image processing failed, saving without image', 'warn');
-      imageUrl = '';
+      toast('Image compression failed. File too large.', 'err');
+      btn.innerHTML = editingFruitId ? 'Update Changes' : 'Save Fruit';
+      btn.disabled = false;
+      return; 
     }
   }
 
@@ -565,8 +609,9 @@ async function saveFruit() {
     }
     closeModal();
   } catch (e) {
-    toast('Error saving: ' + e.message, 'err');
+    toast('Database Error: ' + e.message, 'err');
   }
+  
   btn.innerHTML = editingFruitId ? 'Update Changes' : 'Save Fruit';
   btn.disabled = false;
 }
@@ -582,7 +627,7 @@ async function deleteFruit() {
 }
 
 // ════════════════════════════════════════════════════════════
-//  SHOP SELECT (Added Edit & Delete logic)
+//  SHOP SELECT
 // ════════════════════════════════════════════════════════════
 function goShopSelect() {
   showScreen('shop-select');
@@ -856,7 +901,7 @@ function renderByShop() {
     const entries = Object.entries(items);
     const color = CHIP_COLORS[si % CHIP_COLORS.length];
     
-    // Skip entirely empty shops in collector view to keep it clean, or show them grayed out
+    // Skip entirely empty shops in collector view
     if(entries.length === 0) return '';
     
     return `
