@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Fruit Market Hub</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0F1117; --card: #161923; --border: #222;
+      --orange: #FF6F00; --blue: #2196F3; --green: #4CAF50;
+      --red: #F44336; --text: #fff; --muted: #666;
+      --radius: 14px;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .screen { display: none; min-height: 100vh; flex-direction: column; }
+    .screen.active { display: flex; }
+
+    /* ── Buttons ── */
+    .btn { border: none; border-radius: var(--radius); padding: 14px 20px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.15s; width: 100%; }
+    .btn:active { opacity: 0.8; }
+    .btn-orange { background: var(--orange); color: #fff; }
+    .btn-blue { background: var(--blue); color: #fff; }
+    .btn-green { background: var(--green); color: #fff; }
+    .btn-red { background: var(--red); color: #fff; }
+    .btn-ghost { background: #1A1D27; color: var(--muted); border: 1px solid var(--border); }
+    .btn-sm { padding: 8px 14px; font-size: 13px; width: auto; border-radius: 10px; }
+
+    /* ── Inputs ── */
+    input, select, textarea { background: #1A1D27; border: 1.5px solid var(--border); color: #fff; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-family: inherit; width: 100%; outline: none; }
+    input:focus, select:focus, textarea:focus { border-color: var(--orange); }
+    select option { background: #1A1D27; }
+
+    /* ── Header ── */
+    .header { background: #161923; padding: 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .header-row { display: flex; align-items: center; gap: 10px; }
+    .back-btn { background: none; border: none; color: var(--blue); font-size: 22px; cursor: pointer; padding: 4px 8px 4px 0; }
+    .header-title { font-size: 17px; font-weight: 800; flex: 1; }
+    .header-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Cards ── */
+    .card { background: var(--card); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+    .content { padding: 14px; flex: 1; overflow-y: auto; padding-bottom: 100px; }
+
+    /* ── Bottom bar ── */
+    .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 10px; }
+
+    /* ── Fruit card ── */
+    .fruit-card { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+    .fruit-img { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: #1A1D27; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; overflow: hidden; }
+    .fruit-img img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
+    .fruit-name { font-weight: 700; font-size: 15px; }
+    .fruit-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Qty controls ── */
+    .qty-row { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+    .qty-btn { background: none; border: 1.5px solid var(--orange); color: var(--orange); width: 34px; height: 34px; border-radius: 8px; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .qty-input { width: 54px; text-align: center; padding: 7px 4px; font-size: 15px; font-weight: 700; border-color: var(--border); }
+    .qty-input.has-val { border-color: var(--orange); color: var(--orange); }
+
+    /* ── Role button ── */
+    .role-btn { background: var(--card); border: 2px solid var(--border); border-radius: 16px; padding: 20px; cursor: pointer; display: flex; align-items: center; gap: 16px; width: 100%; text-align: left; margin-bottom: 14px; }
+    .role-btn:hover { border-color: var(--orange); }
+    .role-icon { font-size: 32px; }
+    .role-title { font-size: 17px; font-weight: 700; color: #fff; }
+    .role-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Shop pill ── */
+    .shop-pill { background: var(--card); border: 2px solid var(--border); border-radius: 12px; padding: 14px 18px; cursor: pointer; display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+
+    /* ── Tag ── */
+    .tag { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: #1A2030; color: var(--blue); border: 1px solid #1E3050; }
+
+    /* ── Modal ── */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; align-items: flex-end; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: #161923; border-radius: 20px 20px 0 0; padding: 24px 16px; width: 100%; max-height: 90vh; overflow-y: auto; }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 20px; }
+    .modal-close { float: right; background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+
+    /* ── Toast ── */
+    #toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1B5E20; color: #fff; padding: 10px 22px; border-radius: 24px; font-size: 14px; z-index: 999; display: none; white-space: nowrap; }
+
+    /* ── Upload preview ── */
+    .img-preview { width: 80px; height: 80px; border-radius: 12px; object-fit: cover; border: 2px solid var(--border); margin-top: 10px; display: none; }
+
+    /* ── Collector combined card ── */
+    .combined-card { background: var(--card); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+    .source-chip { display: inline-flex; align-items: center; gap: 6px; background: #1A2030; border: 1px solid #2A3050; border-radius: 20px; padding: 5px 12px; font-size: 13px; margin: 4px 4px 0 0; }
+
+    /* ── Section label ── */
+    .section-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin: 16px 0 8px; }
+
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; line-height: 1.6; }
+    .divider { height: 1px; background: var(--border); margin: 12px 0; }
+    .row { display: flex; gap: 10px; }
+    .flex1 { flex: 1; }
+    .mt8 { margin-top: 8px; }
+    .mt12 { margin-top: 12px; }
+    .mt16 { margin-top: 16px; }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid #fff4; border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-screen { display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; gap: 16px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ═══════════════════════════════════════
+     LOADING
+═══════════════════════════════════════ -->
+<div id="screen-loading" class="loading-screen">
+  <div style="font-size:40px">🧺</div>
+  <div class="spinner"></div>
+  <div>Connecting to market…</div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     LANDING
+═══════════════════════════════════════ -->
+<div id="screen-landing" class="screen">
+  <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px;">
+    <div style="font-size:56px; margin-bottom:10px;">🧺</div>
+    <h1 style="font-size:24px; font-weight:900; margin-bottom:6px; text-align:center;">Fruit Market Hub</h1>
+    <p id="landing-stats" style="color:var(--muted); font-size:13px; text-align:center; margin-bottom:40px;">Loading…</p>
+
+    <div style="width:100%; max-width:360px;">
+      <button class="role-btn" onclick="goAdmin()">
+        <div class="role-icon">⚙️</div>
+        <div>
+          <div class="role-title">Admin</div>
+          <div class="role-sub">Add, edit & delete fruits in the catalogue</div>
+        </div>
+      </button>
+      <button class="role-btn" onclick="goShopSelect()">
+        <div class="role-icon">🏪</div>
+        <div>
+          <div class="role-title">Shop</div>
+          <div class="role-sub">Select quantities from the fruit list</div>
+        </div>
+      </button>
+      <button class="role-btn" onclick="goCollector()">
+        <div class="role-icon">📋</div>
+        <div>
+          <div class="role-title">Collector</div>
+          <div class="role-sub">See all shops' combined requests</div>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ADMIN — Fruit Catalogue
+═══════════════════════════════════════ -->
+<div id="screen-admin" class="screen">
+  <div class="header">
+    <div class="header-row">
+      <button class="back-btn" onclick="showScreen('landing')">←</button>
+      <div>
+        <div class="header-title">⚙️ Admin — Fruit Catalogue</div>
+        <div class="header-sub" id="admin-count">0 items</div>
+      </div>
+    </div>
+  </div>
+  <div class="content" id="admin-list">
+    <div class="empty"><div class="empty-icon">🍑</div><div class="empty-text">No fruits yet.<br>Tap + Add Fruit below.</div></div>
+  </div>
+  <div class="bottom-bar">
+    <button class="btn btn-orange" onclick="openAddModal()">+ Add Fruit</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     SHOP SELECT
+═══════════════════════════════════════ -->
+<div id="screen-shop-select" class="screen">
+  <div class="header">
+    <div class="header-row">
+      <button class="back-btn" onclick="showScreen('landing')">←</button>
+      <div>
+        <div class="header-title">🏪 Select Your Shop</div>
+        <div class="header-sub">Choose existing or add new</div>
+      </div>
+    </div>
+  </div>
+  <div class="content">
+    <div id="existing-shops-list"></div>
+    <div class="section-label">New Shop</div>
+    <div class="row">
+      <input type="text" id="new-shop-input" placeholder="Shop name (e.g. Shop A)" class="flex1" />
+      <button class="btn btn-orange btn-sm" style="width:auto; padding: 0 20px;" onclick="enterShop()">Go →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     SHOP ORDERS
+═══════════════════════════════════════ -->
+<div id="screen-shop-orders" class="screen">
+  <div class="header">
+    <div class="header-row">
+      <button class="back-btn" onclick="showScreen('shop-select')">←</button>
+      <div>
+        <div class="header-title" id="shop-header-name">🏪 Shop</div>
+        <div class="header-sub" id="shop-header-sub">0 items selected</div>
+      </div>
+    </div>
+    <div class="mt8">
+      <input type="text" id="shop-search" placeholder="🔍 Search fruits…" oninput="renderShopFruits()" style="margin-top:8px;" />
+    </div>
+  </div>
+  <div class="content" id="shop-fruits-list"></div>
+  <div class="bottom-bar">
+    <button class="btn btn-ghost btn-sm" style="width:auto; padding:0 16px;" onclick="clearShopOrders()">Clear</button>
+    <button class="btn btn-orange flex1" id="submit-btn" onclick="submitOrders()">Submit</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     COLLECTOR
+═══════════════════════════════════════ -->
+<div id="screen-collector" class="screen">
+  <div class="header">
+    <div class="header-row">
+      <button class="back-btn" onclick="showScreen('landing')">←</button>
+      <div>
+        <div class="header-title">📋 Collector View</div>
+        <div class="header-sub" id="collector-sub">Loading…</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadCollector()">↻</button>
+    </div>
+    <div class="row mt8" style="gap:8px;">
+      <button id="tab-combined" class="btn btn-blue btn-sm flex1" onclick="setCollectorTab('combined')">Combined</button>
+      <button id="tab-byshop" class="btn btn-ghost btn-sm flex1" onclick="setCollectorTab('byshop')">By Shop</button>
+    </div>
+  </div>
+  <div class="content" id="collector-content"></div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     MODAL — Add / Edit Fruit
+═══════════════════════════════════════ -->
+<div class="modal-overlay" id="fruit-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-title" id="modal-title">Add Fruit</div>
+
+    <div class="section-label">Fruit Name</div>
+    <input type="text" id="modal-name" placeholder="e.g. Mango" />
+
+    <div class="section-label mt12">Unit</div>
+    <select id="modal-unit">
+      <option value="kg">kg</option>
+      <option value="g">g</option>
+      <option value="pcs">pcs</option>
+      <option value="dozen">dozen</option>
+      <option value="box">box</option>
+      <option value="bag">bag</option>
+      <option value="bunch">bunch</option>
+    </select>
+
+    <div class="section-label mt12">Image</div>
+    <input type="text" id="modal-img-url" placeholder="Paste image URL (optional)" oninput="previewUrl()" />
+    <div style="text-align:center; color:var(--muted); font-size:12px; margin:8px 0;">— or —</div>
+    <label style="display:block; background:#1A1D27; border:1.5px dashed var(--border); border-radius:10px; padding:14px; text-align:center; cursor:pointer; color:var(--muted); font-size:13px;">
+      📷 Upload from phone
+      <input type="file" id="modal-img-file" accept="image/*" style="display:none;" onchange="previewFile()" />
+    </label>
+    <img id="modal-preview" class="img-preview" />
+
+    <div class="mt16">
+      <button class="btn btn-orange" id="modal-save-btn" onclick="saveFruit()">Save Fruit</button>
+    </div>
+    <div class="mt8" id="modal-delete-row" style="display:none;">
+      <button class="btn btn-red" onclick="deleteFruit()">Delete Fruit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  FIREBASE INIT
+// ════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyBVTHaqOWQqy5O9Eg-BlhtWIR3rTmX2tIs",
+  authDomain: "fruit-c06f8.firebaseapp.com",
+  projectId: "fruit-c06f8",
+  storageBucket: "fruit-c06f8.firebasestorage.app",
+  messagingSenderId: "701699300170",
+  appId: "1:701699300170:web:766d16e171b59f0f8bffb3"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+// ════════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════════
+let fruits = [];          // Array of { id, name, unit, imageUrl }
+let requests = {};        // { shopName: { fruitId: qty } }
+let currentShop = null;
+let shopOrders = {};      // current shop's working orders
+let editingFruitId = null;
+let uploadedFile = null;
+let collectorTab = 'combined';
+let unsubFruits = null;
+let unsubRequests = null;
+
+// ════════════════════════════════════════════════════════════
+//  SCREEN MANAGEMENT
+// ════════════════════════════════════════════════════════════
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById('screen-' + name);
+  if (el) el.classList.add('active');
+  document.getElementById('screen-loading') && (document.getElementById('screen-loading').style.display = 'none');
+}
+
+// ════════════════════════════════════════════════════════════
+//  TOAST
+// ════════════════════════════════════════════════════════════
+let toastTimer;
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = type === 'err' ? '#B71C1C' : type === 'warn' ? '#E65100' : '#1B5E20';
+  el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.style.display = 'none', 2500);
+}
+
+// ════════════════════════════════════════════════════════════
+//  REALTIME LISTENERS
+// ════════════════════════════════════════════════════════════
+function startListeners() {
+  // Fruits listener
+  unsubFruits = db.collection('fruits').orderBy('createdAt', 'asc').onSnapshot(snap => {
+    fruits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    updateLandingStats();
+    renderAdminList();
+    if (currentShop) renderShopFruits();
+    if (collectorTab) renderCollector();
+  });
+
+  // Requests listener
+  unsubRequests = db.collection('requests').onSnapshot(snap => {
+    requests = {};
+    snap.docs.forEach(d => { requests[d.id] = d.data().items || {}; });
+    updateLandingStats();
+    if (collectorTab) renderCollector();
+  });
+}
+
+function updateLandingStats() {
+  const shopCount = Object.keys(requests).filter(s => Object.keys(requests[s]).length > 0).length;
+  document.getElementById('landing-stats').textContent =
+    `${fruits.length} fruits in catalogue · ${shopCount} shop${shopCount !== 1 ? 's' : ''} active`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN
+// ════════════════════════════════════════════════════════════
+function goAdmin() { showScreen('admin'); renderAdminList(); }
+
+function renderAdminList() {
+  const el = document.getElementById('admin-list');
+  document.getElementById('admin-count').textContent = `${fruits.length} item${fruits.length !== 1 ? 's' : ''}`;
+  if (fruits.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🍑</div><div class="empty-text">No fruits yet.<br>Tap + Add Fruit below.</div></div>`;
+    return;
+  }
+  el.innerHTML = fruits.map(f => `
+    <div class="fruit-card">
+      <div class="fruit-img">${imgEl(f)}</div>
+      <div style="flex:1; min-width:0;">
+        <div class="fruit-name">${esc(f.name)}</div>
+        <div class="fruit-meta">per ${f.unit}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="openEditModal('${f.id}')">Edit</button>
+    </div>
+  `).join('');
+}
+
+function imgEl(f) {
+  if (f.imageUrl) return `<img src="${esc(f.imageUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;" onerror="this.parentElement.innerHTML='🍑'" />`;
+  return '🍑';
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODAL
+// ════════════════════════════════════════════════════════════
+function openAddModal() {
+  editingFruitId = null;
+  uploadedFile = null;
+  document.getElementById('modal-title').textContent = 'Add Fruit';
+  document.getElementById('modal-name').value = '';
+  document.getElementById('modal-unit').value = 'kg';
+  document.getElementById('modal-img-url').value = '';
+  document.getElementById('modal-img-file').value = '';
+  document.getElementById('modal-preview').style.display = 'none';
+  document.getElementById('modal-delete-row').style.display = 'none';
+  document.getElementById('modal-save-btn').textContent = 'Add Fruit';
+  document.getElementById('fruit-modal').classList.add('open');
+}
+
+function openEditModal(id) {
+  const f = fruits.find(x => x.id === id);
+  if (!f) return;
+  editingFruitId = id;
+  uploadedFile = null;
+  document.getElementById('modal-title').textContent = 'Edit Fruit';
+  document.getElementById('modal-name').value = f.name;
+  document.getElementById('modal-unit').value = f.unit;
+  document.getElementById('modal-img-url').value = f.imageUrl || '';
+  document.getElementById('modal-img-file').value = '';
+  const prev = document.getElementById('modal-preview');
+  if (f.imageUrl) { prev.src = f.imageUrl; prev.style.display = 'block'; }
+  else prev.style.display = 'none';
+  document.getElementById('modal-delete-row').style.display = 'block';
+  document.getElementById('modal-save-btn').textContent = 'Save Changes';
+  document.getElementById('fruit-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('fruit-modal').classList.remove('open');
+  editingFruitId = null;
+  uploadedFile = null;
+}
+
+function previewUrl() {
+  const url = document.getElementById('modal-img-url').value.trim();
+  const prev = document.getElementById('modal-preview');
+  if (url) { prev.src = url; prev.style.display = 'block'; uploadedFile = null; }
+  else prev.style.display = 'none';
+}
+
+function previewFile() {
+  const file = document.getElementById('modal-img-file').files[0];
+  if (!file) return;
+  uploadedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('modal-preview');
+    prev.src = e.target.result; prev.style.display = 'block';
+    document.getElementById('modal-img-url').value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveFruit() {
+  const name = document.getElementById('modal-name').value.trim();
+  const unit = document.getElementById('modal-unit').value;
+  if (!name) { toast('Please enter a fruit name', 'err'); return; }
+
+  const btn = document.getElementById('modal-save-btn');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+
+  let imageUrl = document.getElementById('modal-img-url').value.trim();
+
+  // Upload file to Firebase Storage if picked
+  if (uploadedFile) {
+    try {
+      const ref = storage.ref(`fruits/${Date.now()}_${uploadedFile.name}`);
+      await ref.put(uploadedFile);
+      imageUrl = await ref.getDownloadURL();
+    } catch (e) {
+      toast('Image upload failed, saving without image', 'warn');
+      imageUrl = '';
+    }
+  }
+
+  const data = { name, unit, imageUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+
+  try {
+    if (editingFruitId) {
+      await db.collection('fruits').doc(editingFruitId).update(data);
+      toast('✅ Fruit updated!');
+    } else {
+      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('fruits').add(data);
+      toast('✅ Fruit added!');
+    }
+    closeModal();
+  } catch (e) {
+    toast('Error saving: ' + e.message, 'err');
+  }
+  btn.innerHTML = editingFruitId ? 'Save Changes' : 'Add Fruit';
+  btn.disabled = false;
+}
+
+async function deleteFruit() {
+  if (!editingFruitId) return;
+  if (!confirm('Delete this fruit? It will be removed from all shops.')) return;
+  try {
+    await db.collection('fruits').doc(editingFruitId).delete();
+    toast('🗑 Fruit deleted');
+    closeModal();
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  SHOP SELECT
+// ════════════════════════════════════════════════════════════
+function goShopSelect() {
+  showScreen('shop-select');
+  renderExistingShops();
+}
+
+function renderExistingShops() {
+  const el = document.getElementById('existing-shops-list');
+  const shops = Object.keys(requests);
+  if (shops.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="section-label">Existing Shops</div>` +
+    shops.map(s => {
+      const count = Object.keys(requests[s] || {}).length;
+      return `<div class="shop-pill" onclick="selectShop('${esc(s)}')">
+        <span style="font-size:22px;">🏪</span>
+        <div style="flex:1;">
+          <div style="font-weight:700;">${esc(s)}</div>
+          <div style="font-size:12px; color:var(--muted);">${count} item${count !== 1 ? 's' : ''} requested</div>
+        </div>
+        <span style="color:var(--muted);">→</span>
+      </div>`;
+    }).join('');
+}
+
+function selectShop(name) { enterShopWithName(name); }
+
+function enterShop() {
+  const name = document.getElementById('new-shop-input').value.trim();
+  if (!name) { toast('Enter a shop name', 'err'); return; }
+  enterShopWithName(name);
+}
+
+function enterShopWithName(name) {
+  currentShop = name;
+  shopOrders = { ...(requests[name] || {}) };
+  document.getElementById('shop-header-name').textContent = '🏪 ' + name;
+  showScreen('shop-orders');
+  renderShopFruits();
+}
+
+// ════════════════════════════════════════════════════════════
+//  SHOP ORDERS
+// ════════════════════════════════════════════════════════════
+function renderShopFruits() {
+  const search = (document.getElementById('shop-search')?.value || '').toLowerCase();
+  const filtered = fruits.filter(f => f.name.toLowerCase().includes(search));
+  const el = document.getElementById('shop-fruits-list');
+
+  if (fruits.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No fruits in catalogue yet.<br>Ask admin to add some.</div></div>`;
+    updateShopHeader(); return;
+  }
+
+  el.innerHTML = filtered.map(f => {
+    const qty = shopOrders[f.id] || '';
+    const hasVal = qty !== '' && qty > 0;
+    return `
+      <div class="fruit-card" id="fc-${f.id}" style="${hasVal ? 'border-color:var(--orange); background:#1A1200;' : ''}">
+        <div class="fruit-img">${imgEl(f)}</div>
+        <div style="flex:1; min-width:0;">
+          <div class="fruit-name" style="${hasVal ? 'color:var(--orange);' : ''}">${esc(f.name)}</div>
+          <div class="fruit-meta">per ${f.unit}</div>
+        </div>
+        <div class="qty-row">
+          <button class="qty-btn" onclick="changeQty('${f.id}', -1)">−</button>
+          <input type="number" min="0" class="qty-input ${hasVal ? 'has-val' : ''}"
+            id="qty-${f.id}" value="${qty}" placeholder="0"
+            oninput="setQty('${f.id}', this.value)" />
+          <button class="qty-btn" onclick="changeQty('${f.id}', 1)">+</button>
+          <span style="font-size:11px; color:var(--muted); min-width:28px;">${f.unit}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  updateShopHeader();
+}
+
+function changeQty(id, delta) {
+  const current = parseFloat(shopOrders[id] || 0);
+  const next = Math.max(0, current + delta);
+  setQtyVal(id, next);
+}
+
+function setQty(id, val) {
+  const num = val === '' ? '' : Math.max(0, parseFloat(val) || 0);
+  setQtyVal(id, num);
+}
+
+function setQtyVal(id, val) {
+  if (val === '' || val === 0) delete shopOrders[id];
+  else shopOrders[id] = val;
+  // Update UI without full re-render
+  const inp = document.getElementById('qty-' + id);
+  const card = document.getElementById('fc-' + id);
+  const hasVal = val !== '' && val > 0;
+  if (inp) { inp.value = val; inp.className = 'qty-input ' + (hasVal ? 'has-val' : ''); }
+  if (card) {
+    card.style.borderColor = hasVal ? 'var(--orange)' : 'var(--border)';
+    card.style.background = hasVal ? '#1A1200' : 'var(--card)';
+    const nameEl = card.querySelector('.fruit-name');
+    if (nameEl) nameEl.style.color = hasVal ? 'var(--orange)' : '';
+  }
+  updateShopHeader();
+}
+
+function updateShopHeader() {
+  const count = Object.keys(shopOrders).length;
+  document.getElementById('shop-header-sub').textContent = `${count} item${count !== 1 ? 's' : ''} selected`;
+  document.getElementById('submit-btn').textContent = `✓ Submit ${count} Item${count !== 1 ? 's' : ''}`;
+}
+
+async function submitOrders() {
+  if (!currentShop) return;
+  const btn = document.getElementById('submit-btn');
+  btn.innerHTML = '<span class="spinner"></span> Saving…';
+  btn.disabled = true;
+  try {
+    await db.collection('requests').doc(currentShop).set({
+      items: shopOrders,
+      submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast('✅ Requests submitted!');
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
+  btn.disabled = false;
+  updateShopHeader();
+}
+
+async function clearShopOrders() {
+  if (!confirm('Clear all your quantities?')) return;
+  shopOrders = {};
+  await db.collection('requests').doc(currentShop).set({ items: {}, submittedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  renderShopFruits();
+  toast('🗑 Cleared');
+}
+
+// ════════════════════════════════════════════════════════════
+//  COLLECTOR
+// ════════════════════════════════════════════════════════════
+function goCollector() { showScreen('collector'); loadCollector(); }
+
+async function loadCollector() {
+  document.getElementById('collector-sub').textContent = 'Refreshing…';
+  // Data comes from realtime listeners — just re-render
+  renderCollector();
+}
+
+function setCollectorTab(tab) {
+  collectorTab = tab;
+  document.getElementById('tab-combined').className = 'btn btn-sm flex1 ' + (tab === 'combined' ? 'btn-blue' : 'btn-ghost');
+  document.getElementById('tab-byshop').className = 'btn btn-sm flex1 ' + (tab === 'byshop' ? 'btn-blue' : 'btn-ghost');
+  renderCollector();
+}
+
+function renderCollector() {
+  const shopNames = Object.keys(requests).filter(s => Object.keys(requests[s] || {}).length > 0);
+  const totalItems = combined().length;
+  document.getElementById('collector-sub').textContent =
+    `${shopNames.length} shop${shopNames.length !== 1 ? 's' : ''} · ${totalItems} unique items · live`;
+
+  if (collectorTab === 'combined') renderCombined();
+  else renderByShop();
+}
+
+function combined() {
+  const map = {};
+  Object.entries(requests).forEach(([shopName, items]) => {
+    Object.entries(items || {}).forEach(([fruitId, qty]) => {
+      if (!map[fruitId]) map[fruitId] = { total: 0, sources: [] };
+      map[fruitId].total += Number(qty);
+      map[fruitId].sources.push({ shop: shopName, qty: Number(qty) });
+    });
+  });
+  return Object.entries(map)
+    .map(([id, v]) => ({ fruitId: id, ...v, fruit: fruits.find(f => f.id === id) }))
+    .filter(x => x.fruit)
+    .sort((a, b) => a.fruit.name.localeCompare(b.fruit.name));
+}
+
+const CHIP_COLORS = ['#E65100','#1B5E20','#0D47A1','#880E4F','#4A148C','#006064'];
+
+function renderCombined() {
+  const el = document.getElementById('collector-content');
+  const data = combined();
+  if (data.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No requests yet.<br>Shops will appear here once they submit.</div></div>`;
+    return;
+  }
+  const allShops = Object.keys(requests).filter(s => Object.keys(requests[s]||{}).length > 0);
+  el.innerHTML = data.map(({ fruit, total, sources }) => `
+    <div class="combined-card">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+        <div class="fruit-img" style="width:46px;height:46px;">${imgEl(fruit)}</div>
+        <div style="flex:1;">
+          <div style="font-weight:800; font-size:16px;">${esc(fruit.name)}</div>
+          <div style="font-size:14px; color:var(--blue); font-weight:700;">Total: ${total} ${fruit.unit}</div>
+        </div>
+        <div class="tag">${sources.length} shop${sources.length > 1 ? 's' : ''}</div>
+      </div>
+      <div>
+        ${sources.map((src, i) => {
+          const idx = allShops.indexOf(src.shop) % CHIP_COLORS.length;
+          const color = CHIP_COLORS[Math.max(0, idx)];
+          return `<span class="source-chip" style="border-color:${color}33; color:${color};">
+            <b>${esc(src.shop)}</b> ${src.qty} ${fruit.unit}
+          </span>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderByShop() {
+  const el = document.getElementById('collector-content');
+  const shopNames = Object.keys(requests);
+  if (shopNames.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">No shops yet.</div></div>`;
+    return;
+  }
+  el.innerHTML = shopNames.map((shopName, si) => {
+    const items = requests[shopName] || {};
+    const entries = Object.entries(items);
+    const color = CHIP_COLORS[si % CHIP_COLORS.length];
+    return `
+      <div class="card" style="border-color:${color}44;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:${entries.length ? 12 : 0}px;">
+          <span style="font-size:20px;">🏪</span>
+          <div style="flex:1; font-weight:800; font-size:16px; color:${color};">${esc(shopName)}</div>
+          <div class="tag">${entries.length} item${entries.length !== 1 ? 's' : ''}</div>
+        </div>
+        ${entries.length === 0
+          ? `<div style="font-size:13px; color:var(--muted);">No requests submitted yet.</div>`
+          : entries.map(([fruitId, qty]) => {
+              const fruit = fruits.find(f => f.id === fruitId);
+              if (!fruit) return '';
+              return `
+                <div style="display:flex; align-items:center; gap:10px; background:#0F1117; border-radius:10px; padding:10px 12px; margin-bottom:6px;">
+                  <div class="fruit-img" style="width:36px;height:36px; font-size:20px;">${imgEl(fruit)}</div>
+                  <span style="flex:1; font-size:14px; font-weight:600;">${esc(fruit.name)}</span>
+                  <span style="font-weight:800; color:${color}; font-size:14px;">${qty} ${fruit.unit}</span>
+                </div>`;
+            }).join('')}
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════
+//  UTILS
+// ════════════════════════════════════════════════════════════
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close modal on overlay click
+document.getElementById('fruit-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ════════════════════════════════════════════════════════════
+//  BOOT
+// ════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('screen-loading').style.display = 'flex';
+  startListeners();
+  setTimeout(() => showScreen('landing'), 1200);
+});
+</script>
+</body>
+</html>
