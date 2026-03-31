@@ -579,6 +579,17 @@ async function saveFruit() {
   const unit = document.getElementById('modal-unit').value;
   if (!name) { toast('Please enter a fruit name', 'err'); return; }
 
+  // 🔴 NEW: Check for duplicate fruit names
+  const nameLower = name.toLowerCase();
+  const isDuplicate = fruits.some(f => 
+    f.name.toLowerCase() === nameLower && f.id !== editingFruitId
+  );
+  
+  if (isDuplicate) {
+    toast(`"${name}" is already in the catalog!`, 'err');
+    return; // Stop the function here
+  }
+
   const btn = document.getElementById('modal-save-btn');
   btn.innerHTML = '<span class="spinner"></span> Processing...';
   btn.disabled = true;
@@ -616,6 +627,7 @@ async function saveFruit() {
   btn.disabled = false;
 }
 
+  
 async function deleteFruit() {
   if (!editingFruitId) return;
   if (!confirm('Permanently delete this fruit? It will be removed from all shop forms.')) return;
