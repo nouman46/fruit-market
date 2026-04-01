@@ -285,14 +285,18 @@
   <div class="header">
     <div class="header-row">
       <button class="back-btn" onclick="showScreen('landing')">←</button>
-      <div>
-        <div class="header-title">Live Collector</div>
-        <div class="header-sub" id="collector-sub">Synchronizing data…</div>
+      <div style="flex:1;">
+        <div class="header-title">📋 Collector</div>
+        <div class="header-sub" id="collector-sub">Loading…</div>
       </div>
+      <button class="btn btn-ghost btn-sm" style="width:auto;" onclick="loadAvailableDates()">↻</button>
     </div>
-    <div class="row mt12" style="background: rgba(15,23,42,0.5); padding: 4px; border-radius: 10px; border: 1px solid var(--border);">
-      <button id="tab-combined" class="btn btn-ghost btn-sm flex1" style="border:none; border-radius: 6px;" onclick="setCollectorTab('combined')">Aggregated</button>
-      <button id="tab-byshop" class="btn btn-ghost btn-sm flex1" style="border:none; border-radius: 6px;" onclick="setCollectorTab('byshop')">By Shop</button>
+    <!-- Date selector -->
+    <div id="date-selector" style="display:flex; gap:8px; overflow-x:auto; padding:10px 0 4px; scrollbar-width:none; -webkit-overflow-scrolling:touch;"></div>
+    <!-- View tabs -->
+    <div class="row mt8" style="background:rgba(15,23,42,0.5); padding:4px; border-radius:10px; border:1px solid var(--border);">
+      <button id="tab-combined" class="btn btn-ghost btn-sm flex1" style="border:none; border-radius:6px;" onclick="setCollectorTab('combined')">Aggregated</button>
+      <button id="tab-byshop" class="btn btn-ghost btn-sm flex1" style="border:none; border-radius:6px;" onclick="setCollectorTab('byshop')">By Shop</button>
     </div>
   </div>
   <div class="content" id="collector-content"></div>
@@ -355,15 +359,44 @@ const db = firebase.firestore();
 // ════════════════════════════════════════════════════════════
 //  STATE
 // ════════════════════════════════════════════════════════════
-let fruits = [];          
-let requests = {};        
+let fruits = [];
+let requests = {};          // today's requests { shopName: { items } } — live
+let collectorData = {};     // requests for whichever date collector is viewing
 let currentShop = null;
-let shopOrders = {};      
+let shopOrders = {};
 let editingFruitId = null;
 let uploadedFile = null;
 let collectorTab = 'combined';
+let selectedDate = todayKey();
+let availableDates = [];
 let unsubFruits = null;
-let unsubRequests = null;
+let unsubTodayRequests = null;
+
+// ════════════════════════════════════════════════════════════
+//  DATE HELPERS
+// ════════════════════════════════════════════════════════════
+function todayKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatDateLabel(dateStr) {
+  const today = todayKey();
+  const yesterday = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  })();
+  if (dateStr === today) return '📅 Today';
+  if (dateStr === yesterday) return 'Yesterday';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 // ════════════════════════════════════════════════════════════
 //  SCREEN MANAGEMENT
@@ -398,7 +431,10 @@ function toast(msg, type = 'ok') {
 // ════════════════════════════════════════════════════════════
 //  REALTIME LISTENERS
 // ════════════════════════════════════════════════════════════
+//  REALTIME LISTENERS
+// ════════════════════════════════════════════════════════════
 function startListeners() {
+  // Fruits listener (unchanged)
   unsubFruits = db.collection('fruits').orderBy('createdAt', 'asc').onSnapshot(snap => {
     fruits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     updateLandingStats();
@@ -407,21 +443,31 @@ function startListeners() {
     if (collectorTab) renderCollector();
   });
 
-  unsubRequests = db.collection('requests').onSnapshot(snap => {
+  // Today's orders — live real-time listener
+  unsubTodayRequests = db.collection('dailyOrders').doc(todayKey()).onSnapshot(snap => {
     requests = {};
-    snap.docs.forEach(d => { requests[d.id] = d.data().items || {}; });
+    const data = snap.data();
+    if (data && data.shops) {
+      Object.entries(data.shops).forEach(([shopName, shopData]) => {
+        requests[shopName] = shopData.items || {};
+      });
+    }
     updateLandingStats();
     if (document.getElementById('screen-shop-select').classList.contains('active')) {
       renderExistingShops();
     }
-    if (collectorTab) renderCollector();
+    // If collector is viewing today, update live
+    if (selectedDate === todayKey()) {
+      collectorData = requests;
+      if (collectorTab) renderCollector();
+    }
   });
 }
 
 function updateLandingStats() {
-  const shopCount = Object.keys(requests).length;
+  const shopCount = Object.keys(requests).filter(s => Object.keys(requests[s] || {}).length > 0).length;
   document.getElementById('landing-stats').textContent =
-    `${fruits.length} items cataloged · ${shopCount} active shop${shopCount !== 1 ? 's' : ''}`;
+    `${fruits.length} items cataloged · ${shopCount} active shop${shopCount !== 1 ? 's' : ''} today`;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -671,43 +717,34 @@ function renderExistingShops() {
 }
 
 async function editShop(oldName, event) {
-  event.stopPropagation(); // Prevents clicking the shop pill
+  event.stopPropagation();
   const newName = prompt('Enter new name for this shop:', oldName);
-  
   if (!newName || newName.trim() === '' || newName.trim() === oldName) return;
   const cleanNewName = newName.trim();
-  
-  // Prevent overwriting existing shop
-  if (requests[cleanNewName]) {
-    toast('A shop with this name already exists.', 'err');
-    return;
-  }
-  
+  if (requests[cleanNewName]) { toast('A shop with this name already exists.', 'err'); return; }
   try {
-    const existingData = requests[oldName] || {};
-    // 1. Write to new document
-    await db.collection('requests').doc(cleanNewName).set({
-      items: existingData,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    // 2. Delete old document
-    await db.collection('requests').doc(oldName).delete();
-    toast('✅ Shop renamed successfully');
-  } catch (e) {
-    toast('Error renaming: ' + e.message, 'err');
-  }
+    const dateKey = todayKey();
+    const snap = await db.collection('dailyOrders').doc(dateKey).get();
+    const data = snap.data();
+    const existingShopData = (data && data.shops && data.shops[oldName]) || { items: {} };
+    // Write new name, delete old
+    await db.collection('dailyOrders').doc(dateKey).set({
+      [`shops.${cleanNewName}`]: existingShopData,
+      [`shops.${oldName}`]: firebase.firestore.FieldValue.delete()
+    }, { merge: true });
+    toast('✅ Shop renamed');
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 
 async function deleteShop(shopName, event) {
-  event.stopPropagation(); // Prevents clicking the shop pill
-  if (!confirm(`Are you sure you want to completely delete "${shopName}"? This removes all their current requests.`)) return;
-  
+  event.stopPropagation();
+  if (!confirm(`Delete "${shopName}" from today's orders?`)) return;
   try {
-    await db.collection('requests').doc(shopName).delete();
+    await db.collection('dailyOrders').doc(todayKey()).update({
+      [`shops.${shopName}`]: firebase.firestore.FieldValue.delete()
+    });
     toast(`🗑 Deleted ${shopName}`);
-  } catch (e) {
-    toast('Error deleting: ' + e.message, 'err');
-  }
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 
 function enterShop() {
@@ -808,12 +845,17 @@ async function submitOrders() {
   btn.innerHTML = '<span class="spinner"></span> Syncing…';
   btn.disabled = true;
   try {
-    await db.collection('requests').doc(currentShop).set({
-      items: shopOrders,
-      submittedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    toast('✅ Order successfully synced!');
-    setTimeout(() => goShopSelect(), 1000); // Route back after success
+    const dateKey = todayKey();
+    // Use merge so other shops' data is not overwritten
+    await db.collection('dailyOrders').doc(dateKey).set({
+      date: dateKey,
+      [`shops.${currentShop}`]: {
+        items: shopOrders,
+        submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }
+    }, { merge: true });
+    toast('✅ Order synced for ' + dateKey);
+    setTimeout(() => goShopSelect(), 1000);
   } catch (e) { toast('Error: ' + e.message, 'err'); }
   btn.disabled = false;
   updateShopHeader();
@@ -828,33 +870,91 @@ async function clearShopOrders() {
 // ════════════════════════════════════════════════════════════
 //  COLLECTOR
 // ════════════════════════════════════════════════════════════
-function goCollector() { showScreen('collector'); setCollectorTab('combined'); loadCollector(); }
+async function goCollector() {
+  showScreen('collector');
+  selectedDate = todayKey();
+  collectorData = requests; // start with today's live data
+  setCollectorTab('combined');
+  await loadAvailableDates();
+}
 
-async function loadCollector() {
-  document.getElementById('collector-sub').textContent = 'Live Syncing…';
-  renderCollector();
+async function loadAvailableDates() {
+  try {
+    const snap = await db.collection('dailyOrders')
+      .orderBy(firebase.firestore.FieldPath.documentId(), 'desc')
+      .limit(30).get();
+    availableDates = snap.docs.map(d => d.id);
+    // Make sure today is always in the list
+    if (!availableDates.includes(todayKey())) availableDates.unshift(todayKey());
+    renderDateSelector();
+    renderCollector();
+  } catch(e) {
+    availableDates = [todayKey()];
+    renderDateSelector();
+    renderCollector();
+  }
+}
+
+function renderDateSelector() {
+  const el = document.getElementById('date-selector');
+  el.innerHTML = availableDates.map(d => {
+    const isSelected = d === selectedDate;
+    return `<button onclick="selectCollectorDate('${d}')" style="
+      flex-shrink:0; padding: 6px 14px; border-radius:20px; font-size:13px; font-weight:600;
+      border: 1.5px solid ${isSelected ? 'var(--primary)' : 'var(--border)'};
+      background: ${isSelected ? 'var(--primary)' : 'transparent'};
+      color: ${isSelected ? '#fff' : 'var(--muted)'};
+      cursor:pointer; font-family:inherit; white-space:nowrap;
+    ">${formatDateLabel(d)}</button>`;
+  }).join('');
+}
+
+async function selectCollectorDate(dateStr) {
+  selectedDate = dateStr;
+  renderDateSelector();
+  if (dateStr === todayKey()) {
+    collectorData = requests; // live data
+    renderCollector();
+  } else {
+    document.getElementById('collector-sub').textContent = 'Loading…';
+    try {
+      const snap = await db.collection('dailyOrders').doc(dateStr).get();
+      const data = snap.data();
+      collectorData = {};
+      if (data && data.shops) {
+        Object.entries(data.shops).forEach(([shopName, shopData]) => {
+          collectorData[shopName] = shopData.items || {};
+        });
+      }
+    } catch(e) { collectorData = {}; }
+    renderCollector();
+  }
 }
 
 function setCollectorTab(tab) {
   collectorTab = tab;
   document.getElementById('tab-combined').className = 'btn btn-sm flex1 ' + (tab === 'combined' ? 'btn-primary' : 'btn-ghost');
   document.getElementById('tab-byshop').className = 'btn btn-sm flex1 ' + (tab === 'byshop' ? 'btn-primary' : 'btn-ghost');
+  document.getElementById('tab-combined').style.border = 'none';
+  document.getElementById('tab-combined').style.borderRadius = '6px';
+  document.getElementById('tab-byshop').style.border = 'none';
+  document.getElementById('tab-byshop').style.borderRadius = '6px';
   renderCollector();
 }
 
 function renderCollector() {
-  const shopNames = Object.keys(requests).filter(s => Object.keys(requests[s] || {}).length > 0);
-  const totalItems = combined().length;
+  const activeShops = Object.keys(collectorData).filter(s => Object.keys(collectorData[s] || {}).length > 0);
+  const totalItems = combinedData().length;
+  const dateLabel = formatDateLabel(selectedDate);
   document.getElementById('collector-sub').textContent =
-    `${shopNames.length} shop${shopNames.length !== 1 ? 's' : ''} · ${totalItems} unique item${totalItems !== 1 ? 's' : ''} · Live`;
-
+    `${dateLabel} · ${activeShops.length} shop${activeShops.length !== 1 ? 's' : ''} · ${totalItems} items`;
   if (collectorTab === 'combined') renderCombined();
   else renderByShop();
 }
 
-function combined() {
+function combinedData() {
   const map = {};
-  Object.entries(requests).forEach(([shopName, items]) => {
+  Object.entries(collectorData).forEach(([shopName, items]) => {
     Object.entries(items || {}).forEach(([fruitId, qty]) => {
       if (!map[fruitId]) map[fruitId] = { total: 0, sources: [] };
       map[fruitId].total += Number(qty);
@@ -867,16 +967,19 @@ function combined() {
     .sort((a, b) => a.fruit.name.localeCompare(b.fruit.name));
 }
 
+// Keep old combined() as alias
+function combined() { return combinedData(); }
+
 const CHIP_COLORS = ['#3b82f6','#10b981','#8b5cf6','#f59e0b','#ec4899','#14b8a6'];
 
 function renderCombined() {
   const el = document.getElementById('collector-content');
-  const data = combined();
+  const data = combinedData();
   if (data.length === 0) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No active orders yet.<br>Submitted shop requests will appear here.</div></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No orders for ${formatDateLabel(selectedDate)}.<br>${selectedDate === todayKey() ? 'Shops will appear here once they submit.' : 'No data was recorded for this date.'}</div></div>`;
     return;
   }
-  const allShops = Object.keys(requests).filter(s => Object.keys(requests[s]||{}).length > 0);
+  const allShops = Object.keys(collectorData).filter(s => Object.keys(collectorData[s]||{}).length > 0);
   el.innerHTML = data.map(({ fruit, total, sources }) => `
     <div class="card" style="padding: 20px;">
       <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
@@ -902,14 +1005,14 @@ function renderCombined() {
 
 function renderByShop() {
   const el = document.getElementById('collector-content');
-  const shopNames = Object.keys(requests).sort();
+  const shopNames = Object.keys(collectorData).sort();
   if (shopNames.length === 0) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">🏪</div><div class="empty-text">No shops created yet.</div></div>`;
     return;
   }
   
   el.innerHTML = shopNames.map((shopName, si) => {
-    const items = requests[shopName] || {};
+    const items = collectorData[shopName] || {};
     const entries = Object.entries(items);
     const color = CHIP_COLORS[si % CHIP_COLORS.length];
     
